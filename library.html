@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>YouTube Timestamp Notes - Library</title>
+  <link rel="stylesheet" href="library-styles.css">
+</head>
+<body>
+  <div class="library-container">
+    <header class="library-header">
+      <h1>📚 Your Video Library</h1>
+      <div class="header-actions">
+        <button id="import-btn" class="action-btn">📥 Import</button>
+        <button id="export-all-btn" class="action-btn">📤 Export All</button>
+      </div>
+    </header>
+
+    <div class="filters-bar">
+      <input type="text" id="search-input" placeholder="Search videos or notes..." class="search-input">
+      <input type="text" id="tag-filter-input" placeholder="Filter by tag..." class="tag-filter-input">
+      <select id="sort-select" class="sort-select">
+        <option value="recent">Recently Updated</option>
+        <option value="oldest">Oldest First</option>
+        <option value="title">Title A-Z</option>
+        <option value="notes">Most Notes</option>
+      </select>
+    </div>
+
+    <div class="stats-bar">
+      <span id="stats-videos">0 videos</span>
+      <span id="stats-notes">0 notes</span>
+      <span id="stats-tags">0 tags</span>
+    </div>
+
+    <div id="videos-list" class="videos-list">
+      <div class="empty-state">
+        <h2>No videos saved yet</h2>
+        <p>Start taking notes on YouTube videos to see them here!</p>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="import-file-input" accept=".json" style="display: none;">
+
+  <script src="library.js"></script>
+</body>
+</html>

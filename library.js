@@ -76,9 +76,9 @@ function updateStats() {
     });
   });
   
-  document.getElementById('stats-videos').textContent = `${allVideos.length} video${allVideos.length !== 1 ? 's' : ''}`;
-  document.getElementById('stats-notes').textContent = `${totalNotes} note${totalNotes !== 1 ? 's' : ''}`;
-  document.getElementById('stats-tags').textContent = `${allTags.size} tag${allTags.size !== 1 ? 's' : ''}`;
+  document.getElementById('stats-videos-count').textContent = allVideos.length;
+  document.getElementById('stats-notes-count').textContent = totalNotes;
+  document.getElementById('stats-tags-count').textContent = allTags.size;
 }
 
 // Handle search input
@@ -155,6 +155,12 @@ function renderVideos() {
     if (allVideos.length === 0) {
       videosList.innerHTML = `
         <div class="empty-state">
+          <div class="empty-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="2" y="3" width="20" height="14" rx="2" stroke="currentColor" stroke-width="2"/>
+              <path d="M8 21h8M12 17v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
           <h2>No videos saved yet</h2>
           <p>Start taking notes on YouTube videos to see them here!</p>
         </div>
@@ -162,6 +168,12 @@ function renderVideos() {
     } else {
       videosList.innerHTML = `
         <div class="empty-state">
+          <div class="empty-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="2"/>
+              <path d="M21 21l-4.35-4.35" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
           <h2>No videos match your filters</h2>
           <p>Try adjusting your search or tag filters.</p>
         </div>
@@ -183,17 +195,19 @@ function createVideoCard(video) {
   
   return `
     <div class="video-card" data-video-id="${video.videoId}">
-      <div class="video-header">
-        <div class="video-title-link">
-          <h2 class="video-title" data-url="${escapeHtml(video.url)}">${escapeHtml(video.title)}</h2>
-          <div class="video-meta">
-            <span>📝 ${video.noteCount} note${video.noteCount !== 1 ? 's' : ''}</span>
-            <span>🕒 ${formattedDate}</span>
+      <div class="video-card-header">
+        <div class="video-header">
+          <div class="video-title-link">
+            <h2 class="video-title" data-url="${escapeHtml(video.url)}">${escapeHtml(video.title)}</h2>
+            <div class="video-meta">
+              <span>📝 ${video.noteCount} note${video.noteCount !== 1 ? 's' : ''}</span>
+              <span>🕒 ${formattedDate}</span>
+            </div>
           </div>
-        </div>
-        <div class="video-actions">
-          <button class="video-action-btn export-video-btn" data-video-id="${video.videoId}">📤 Export</button>
-          <button class="video-action-btn delete-video-btn" data-video-id="${video.videoId}">🗑️ Delete</button>
+          <div class="video-actions">
+            <button class="video-action-btn export-video-btn" data-video-id="${video.videoId}">📤 Export</button>
+            <button class="video-action-btn delete-video-btn" data-video-id="${video.videoId}">🗑️ Delete</button>
+          </div>
         </div>
       </div>
       
@@ -209,22 +223,29 @@ function createVideoCard(video) {
           <button class="toggle-notes-btn" data-video-id="${video.videoId}">Hide</button>
         </div>
         <div class="notes-content" data-video-id="${video.videoId}">
-          ${video.timestamps.sort((a, b) => a.time - b.time).map(ts => `
+          ${video.timestamps.sort((a, b) => a.time - b.time).map(ts => {
+            const thumbnail = ts.thumbnail || `https://img.youtube.com/vi/${video.videoId}/hqdefault.jpg`;
+            return `
             <div class="note-item">
-              <div class="note-header">
-                <span class="note-timestamp" data-url="${escapeHtml(video.url)}" data-time="${ts.time}">
-                  ${formatTime(ts.time)}
-                </span>
-                <button class="note-delete-btn" data-video-id="${video.videoId}" data-note-id="${ts.id}">×</button>
+              <div class="note-thumb">
+                <img src="${thumbnail}" alt="Frame at ${formatTime(ts.time)}" loading="lazy">
               </div>
-              <div class="note-text">${escapeHtml(ts.note)}</div>
-              ${ts.tags && ts.tags.length > 0 ? `
-                <div class="note-tags">
-                  ${ts.tags.map(tag => `<span class="tag note-tag">${escapeHtml(tag)}</span>`).join('')}
+              <div class="note-content">
+                <div class="note-header">
+                  <span class="note-timestamp" data-url="${escapeHtml(video.url)}" data-time="${ts.time}">
+                    ${formatTime(ts.time)}
+                  </span>
+                  <button class="note-delete-btn" data-video-id="${video.videoId}" data-note-id="${ts.id}">×</button>
                 </div>
-              ` : ''}
+                <div class="note-text">${escapeHtml(ts.note)}</div>
+                ${ts.tags && ts.tags.length > 0 ? `
+                  <div class="note-tags">
+                    ${ts.tags.map(tag => `<span class="tag note-tag">${escapeHtml(tag)}</span>`).join('')}
+                  </div>
+                ` : ''}
+              </div>
             </div>
-          `).join('')}
+          `}).join('')}
         </div>
       </div>
     </div>
@@ -318,7 +339,7 @@ async function exportVideo(videoId) {
     exportedAt: new Date().toISOString()
   };
   
-  downloadJSON(exportData, `youtube-notes-${videoId}-${Date.now()}.json`);
+  downloadJSON(exportData, `timestamp-notes-${videoId}-${Date.now()}.json`);
 }
 
 // Export all data
@@ -343,7 +364,7 @@ async function exportAllData() {
     }
   });
   
-  downloadJSON(exportData, `youtube-notes-all-${Date.now()}.json`);
+  downloadJSON(exportData, `timestamp-notes-all-${Date.now()}.json`);
 }
 
 // Import data from JSON file

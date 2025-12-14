@@ -2,6 +2,7 @@
 
 let currentVideoInfo = null;
 let capturedTime = null;
+let capturedFrame = null;
 
 // Initialize when popup opens
 document.addEventListener('DOMContentLoaded', async () => {
@@ -21,6 +22,7 @@ function setupEventListeners() {
   document.getElementById('cancel-video-tags-btn').addEventListener('click', hideVideoTagsEditor);
   document.getElementById('export-btn').addEventListener('click', exportCurrentVideo);
   document.getElementById('tag-filter').addEventListener('input', filterByTag);
+  document.getElementById('clear-capture-btn').addEventListener('click', clearCapture);
 }
 
 // Open library page
@@ -84,11 +86,16 @@ function displayVideoTags() {
 
 // Load current video information from the active tab
 async function loadVideoInfo() {
+  const statusDot = document.querySelector('.status-dot');
+  const statusText = document.querySelector('.status-text');
+  
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     
     if (!tab.url.includes('youtube.com')) {
       document.getElementById('capture-btn').disabled = true;
+      statusDot.style.background = 'var(--text-tertiary)';
+      statusText.textContent = 'Not YouTube';
       return;
     }
 
@@ -106,53 +113,95 @@ async function loadVideoInfo() {
       document.querySelector('.video-title').textContent = response.title;
       displayVideoTags();
       document.getElementById('capture-btn').disabled = false;
+      statusDot.style.background = 'var(--success)';
+      statusText.textContent = 'Connected';
     } else {
       document.getElementById('capture-btn').disabled = true;
+      statusDot.style.background = 'var(--warning)';
+      statusText.textContent = 'No video';
     }
   } catch (error) {
     console.error('Error loading video info:', error);
     document.getElementById('capture-btn').disabled = true;
+    statusDot.style.background = 'var(--error)';
+    statusText.textContent = 'Error';
   }
 }
 
-// Capture current timestamp
+// Capture current timestamp with frame
 async function captureTimestamp() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const response = await chrome.tabs.sendMessage(tab.id, { action: 'getVideoInfo' });
     
-    capturedTime = response.currentTime;
+    // Get video info and capture frame in parallel
+    const [videoResponse, frameResponse] = await Promise.all([
+      chrome.tabs.sendMessage(tab.id, { action: 'getVideoInfo' }),
+      chrome.tabs.sendMessage(tab.id, { action: 'captureFrame' })
+    ]);
     
-    // Show the captured time
-    let timeDisplay = document.querySelector('.current-time-display');
-    if (!timeDisplay) {
-      timeDisplay = document.createElement('div');
-      timeDisplay.className = 'current-time-display';
-      document.querySelector('.add-section').insertBefore(
-        timeDisplay, 
-        document.getElementById('note-input')
-      );
+    capturedTime = videoResponse.currentTime;
+    
+    // Store frame data
+    if (frameResponse.success) {
+      capturedFrame = frameResponse.frameDataUrl;
+    } else {
+      // Fallback to YouTube thumbnail
+      capturedFrame = `https://img.youtube.com/vi/${currentVideoInfo.videoId}/hqdefault.jpg`;
     }
     
-    timeDisplay.textContent = `Captured: ${formatTime(capturedTime)}`;
+    // Show preview
+    showCapturePreview();
+    
     document.getElementById('note-input').focus();
     document.getElementById('save-btn').disabled = false;
+    
+    // Add capture animation
+    const captureBtn = document.getElementById('capture-btn');
+    captureBtn.classList.add('flash-success');
+    setTimeout(() => captureBtn.classList.remove('flash-success'), 600);
+    
   } catch (error) {
     console.error('Error capturing timestamp:', error);
   }
 }
 
+// Show capture preview
+function showCapturePreview() {
+  const preview = document.getElementById('capture-preview');
+  const thumbnail = document.getElementById('preview-thumbnail');
+  const timestamp = document.getElementById('preview-timestamp');
+  
+  thumbnail.src = capturedFrame;
+  timestamp.textContent = formatTime(capturedTime);
+  preview.style.display = 'block';
+}
+
+// Clear capture
+function clearCapture() {
+  capturedTime = null;
+  capturedFrame = null;
+  
+  const preview = document.getElementById('capture-preview');
+  preview.style.display = 'none';
+  
+  document.getElementById('save-btn').disabled = true;
+}
+
 // Save timestamp with note
 async function saveTimestamp() {
   if (capturedTime === null) {
-    alert('Please capture a timestamp first!');
     return;
   }
 
   const note = document.getElementById('note-input').value.trim();
   
   if (!note) {
-    alert('Please add a note!');
+    // Shake animation for empty note
+    const noteInput = document.getElementById('note-input');
+    noteInput.style.animation = 'none';
+    noteInput.offsetHeight; // Trigger reflow
+    noteInput.style.animation = 'shake 0.5s ease';
+    noteInput.focus();
     return;
   }
 
@@ -168,6 +217,7 @@ async function saveTimestamp() {
     time: capturedTime,
     note: note,
     tags: tags,
+    thumbnail: capturedFrame,
     createdAt: new Date().toISOString()
   };
 
@@ -200,12 +250,7 @@ async function saveTimestamp() {
   // Clear the form
   document.getElementById('note-input').value = '';
   document.getElementById('note-tags-input').value = '';
-  capturedTime = null;
-  document.getElementById('save-btn').disabled = true;
-  const timeDisplay = document.querySelector('.current-time-display');
-  if (timeDisplay) {
-    timeDisplay.remove();
-  }
+  clearCapture();
 
   // Reload the timestamps list
   await loadTimestamps();
@@ -218,7 +263,7 @@ function filterByTag() {
   
   timestampItems.forEach(item => {
     if (!filterText) {
-      item.style.display = 'block';
+      item.style.display = 'flex';
       return;
     }
     
@@ -226,7 +271,7 @@ function filterByTag() {
     const note = item.querySelector('.timestamp-note').textContent.toLowerCase();
     
     if (tags.includes(filterText) || note.includes(filterText)) {
-      item.style.display = 'block';
+      item.style.display = 'flex';
     } else {
       item.style.display = 'none';
     }
@@ -238,7 +283,7 @@ async function loadTimestamps() {
   const timestampsList = document.getElementById('timestamps-list');
   
   if (!currentVideoInfo || !currentVideoInfo.videoId) {
-    timestampsList.innerHTML = '<div class="empty-state">Open a YouTube video to see saved timestamps</div>';
+    timestampsList.innerHTML = '<div class="empty-state">Open a YouTube video to see saved notes</div>';
     return;
   }
 
@@ -247,28 +292,36 @@ async function loadTimestamps() {
   const timestamps = result[storageKey] || [];
 
   if (timestamps.length === 0) {
-    timestampsList.innerHTML = '<div class="empty-state">No timestamps saved for this video yet</div>';
+    timestampsList.innerHTML = '<div class="empty-state">No notes yet — capture your first moment!</div>';
     return;
   }
 
   // Sort timestamps by time
   timestamps.sort((a, b) => a.time - b.time);
 
-  // Display timestamps
-  timestampsList.innerHTML = timestamps.map(ts => `
+  // Display timestamps with thumbnails
+  timestampsList.innerHTML = timestamps.map(ts => {
+    const thumbnail = ts.thumbnail || `https://img.youtube.com/vi/${ts.videoId}/hqdefault.jpg`;
+    
+    return `
     <div class="timestamp-item" data-time="${ts.time}" data-tags="${(ts.tags || []).join(',')}">
-      <div class="timestamp-header">
-        <span class="timestamp-time">${formatTime(ts.time)}</span>
-        <button class="delete-btn" data-id="${ts.id}" title="Delete">×</button>
+      <div class="timestamp-thumb">
+        <img src="${thumbnail}" alt="Frame at ${formatTime(ts.time)}" loading="lazy">
       </div>
-      <div class="timestamp-note">${escapeHtml(ts.note)}</div>
-      ${ts.tags && ts.tags.length > 0 ? `
-        <div class="timestamp-tags">
-          ${ts.tags.map(tag => `<span class="tag note-tag">${escapeHtml(tag)}</span>`).join('')}
+      <div class="timestamp-content">
+        <div class="timestamp-header">
+          <span class="timestamp-time">${formatTime(ts.time)}</span>
+          <button class="delete-btn" data-id="${ts.id}" title="Delete">×</button>
         </div>
-      ` : ''}
+        <div class="timestamp-note">${escapeHtml(ts.note)}</div>
+        ${ts.tags && ts.tags.length > 0 ? `
+          <div class="timestamp-tags">
+            ${ts.tags.map(tag => `<span class="tag note-tag">${escapeHtml(tag)}</span>`).join('')}
+          </div>
+        ` : ''}
+      </div>
     </div>
-  `).join('');
+  `}).join('');
 
   // Add click listeners to timestamp items
   timestampsList.querySelectorAll('.timestamp-item').forEach(item => {
@@ -295,10 +348,6 @@ async function seekToTime(time) {
 
 // Delete a specific timestamp
 async function deleteTimestamp(id) {
-  if (!confirm('Delete this timestamp?')) {
-    return;
-  }
-
   const storageKey = `timestamps_${currentVideoInfo.videoId}`;
   const result = await chrome.storage.local.get(storageKey);
   let timestamps = result[storageKey] || [];
@@ -324,7 +373,7 @@ async function clearAllTimestamps() {
     return;
   }
 
-  if (!confirm('Delete all timestamps for this video?')) {
+  if (!confirm('Delete all notes for this video?')) {
     return;
   }
 
@@ -345,7 +394,6 @@ async function clearAllTimestamps() {
 // Export current video's notes
 async function exportCurrentVideo() {
   if (!currentVideoInfo || !currentVideoInfo.videoId) {
-    alert('No video loaded!');
     return;
   }
 
@@ -371,7 +419,7 @@ async function exportCurrentVideo() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `youtube-notes-${currentVideoInfo.videoId}-${Date.now()}.json`;
+  a.download = `timestamp-notes-${currentVideoInfo.videoId}-${Date.now()}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
